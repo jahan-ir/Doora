@@ -1,0 +1,5 @@
+customtkinter
+pillow
+jdatetime
+thread
+DateTime
