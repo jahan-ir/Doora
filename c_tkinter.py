@@ -29,7 +29,24 @@ cur.execute("""
     )
 """)
 db.commit()
+cur.execute ("""
 
+    CREATE TABLE IF NOT EXISTS Tomorrow(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task text,
+    date text,
+    is_done INTEGER
+    )
+""")
+db.commit()
+cur.execute ("""
+
+    CREATE TABLE IF NOT EXISTS motivation(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text_motivation text
+    )
+""")
+db.commit()
 
 def check_yesterday_tasks_before_migration():
 
@@ -60,6 +77,21 @@ def check_yesterday_tasks_before_migration():
 
 SHOULD_PUNISH = False
 
+def move_tomorrow_tasks_to_today():
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute("SELECT id, task FROM Tomorrow WHERE date = ?", (today,))
+    rows = cur.fetchall()
+
+    for tomorrow_id, task_text in rows:
+        cur.execute(
+            "INSERT INTO tasks(task, date, is_done) VALUES (?, ?, ?)",
+            (task_text, today, 0)
+        )
+        cur.execute("DELETE FROM Tomorrow WHERE id = ?", (tomorrow_id,))
+
+    db.commit()
 
 def gregorian_to_jalali_table_suffix(gregorian_date_str):
     """ '2026-07-30' -> '1405_05_08' (فرمت مناسب برای اسم جدول) """
@@ -119,87 +151,88 @@ def cleanup_old_day_tables():
 
 
 check_yesterday_tasks_before_migration()   # اول (قبل از migrate) چک کن دیروز کاری نصفه مونده یا نه
+move_tomorrow_tasks_to_today()  
 migrate_old_tasks_to_daily_tables()   # اول کارهای قدیمی رو به جدول روزانه‌شون منتقل کن
 cleanup_old_day_tables()     
 db.commit()
 
 
-USER_ID_FILE = "device_id.txt"
+# USER_ID_FILE = "device_id.txt"
 
 
-def get_or_create_user_id():
-    if os.path.exists(USER_ID_FILE):
-        with open(USER_ID_FILE, "r", encoding="utf-8-sig") as f:
-            saved_id = f.read().strip()
-            if saved_id:
-                return saved_id
-    import uuid
-    new_id = str(uuid.uuid4())
-    with open(USER_ID_FILE, "w") as f:
-        f.write(new_id)
-    return new_id
+# def get_or_create_user_id():
+#     if os.path.exists(USER_ID_FILE):
+#         with open(USER_ID_FILE, "r", encoding="utf-8-sig") as f:
+#             saved_id = f.read().strip()
+#             if saved_id:
+#                 return saved_id
+#     import uuid
+#     new_id = str(uuid.uuid4())
+#     with open(USER_ID_FILE, "w") as f:
+#         f.write(new_id)
+#     return new_id
 
-def collect_all_tasks_summary():#همه داده ها رو میگیره و نسبت به همون به ما جواب میده
-    lines = []
+# def collect_all_tasks_summary():#همه داده ها رو میگیره و نسبت به همون به ما جواب میده
+#     lines = []
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    cur.execute("SELECT task, is_done FROM tasks WHERE date = ?", (today,))
-    today_rows = cur.fetchall()
-    if today_rows:
-        lines.append("امروز:")
-        for task_text, is_done in today_rows:
-            status = "انجام‌شده" if is_done else "انجام‌نشده"
-            lines.append(f"- {task_text} ({status})")
+#     today = datetime.now().strftime("%Y-%m-%d")
+#     cur.execute("SELECT task, is_done FROM tasks WHERE date = ?", (today,))
+#     today_rows = cur.fetchall()
+#     if today_rows:
+#         lines.append("امروز:")
+#         for task_text, is_done in today_rows:
+#             status = "انجام‌شده" if is_done else "انجام‌نشده"
+#             lines.append(f"- {task_text} ({status})")
 
-    for table_name in reversed(get_all_daily_tables()):
-        display_date = table_name.replace("task_", "").replace("_", "/")
-        cur.execute(f'SELECT task, is_done FROM "{table_name}"')
-        rows = cur.fetchall()
-        if rows:
-            lines.append(f"\nتاریخ {display_date}:")
-            for task_text, is_done in rows:
-                status = "انجام‌شده" if is_done else "انجام‌نشده"
-                lines.append(f"- {task_text} ({status})")
+#     for table_name in reversed(get_all_daily_tables()):
+#         display_date = table_name.replace("task_", "").replace("_", "/")
+#         cur.execute(f'SELECT task, is_done FROM "{table_name}"')
+#         rows = cur.fetchall()
+#         if rows:
+#             lines.append(f"\nتاریخ {display_date}:")
+#             for task_text, is_done in rows:
+#                 status = "انجام‌شده" if is_done else "انجام‌نشده"
+#                 lines.append(f"- {task_text} ({status})")
 
-    if not lines:
-        return "هیچ کاری هنوز ثبت نشده."
+#     if not lines:
+#         return "هیچ کاری هنوز ثبت نشده."
 
-    return "\n".join(lines)
-
-
-SERVER_URL = "https://your-server-url.onrender.com"   # بعد از دیپلوی، این آدرس رو با آدرس واقعی سرورت عوض کن
+#     return "\n".join(lines)
 
 
-def ask_OpenAI(user_question, on_success, on_error):#دادن پرامت و نوع جواب دادن به ما
+# SERVER_URL = "https://your-server-url.onrender.com"   # بعد از دیپلوی، این آدرس رو با آدرس واقعی سرورت عوض کن
 
-    tasks_summary = collect_all_tasks_summary()   
-    user_id = get_or_create_user_id()
 
-    def worker():
-        try:
-            response = requests.post(
-                f"{SERVER_URL}/ask",
-                json={
-                    "user_id": user_id,
-                    "tasks_summary": tasks_summary,
-                    "question": user_question
-                },
-                timeout=30
-            )
-            data = response.json()
+# def ask_OpenAI(user_question, on_success, on_error):#دادن پرامت و نوع جواب دادن به ما
 
-            if response.status_code != 200:
-                error_message = data.get("error", "خطای ناشناخته")
-                app.after(0, lambda: on_error(error_message))
-                return
+#     tasks_summary = collect_all_tasks_summary()   
+#     user_id = get_or_create_user_id()
 
-            result_text = data["answer"]
-            app.after(0, lambda: on_success(result_text))
-        except Exception as e:
-            error_message = str(e)   # مقدار رو همینجا توی یه متغیر معمولی نگه می‌داریم
-            app.after(0, lambda: on_error(error_message))
+#     def worker():
+#         try:
+#             response = requests.post(
+#                 f"{SERVER_URL}/ask",
+#                 json={
+#                     "user_id": user_id,
+#                     "tasks_summary": tasks_summary,
+#                     "question": user_question
+#                 },
+#                 timeout=30
+#             )
+#             data = response.json()
 
-    threading.Thread(target=worker, daemon=True).start()
+#             if response.status_code != 200:
+#                 error_message = data.get("error", "خطای ناشناخته")
+#                 app.after(0, lambda: on_error(error_message))
+#                 return
+
+#             result_text = data["answer"]
+#             app.after(0, lambda: on_success(result_text))
+#         except Exception as e:
+#             error_message = str(e)   # مقدار رو همینجا توی یه متغیر معمولی نگه می‌داریم
+#             app.after(0, lambda: on_error(error_message))
+
+#     threading.Thread(target=worker, daemon=True).start()
 
 
 def resource_path(relative_path):
@@ -263,7 +296,7 @@ def loade_page_todo():#صفحه ای که با کلیک روی دکمه تو د�
         text_color="black",
         font=("B Nazanin", 20)
     )
-    title_label.pack(padx=15, pady=(0, 10), anchor="w")
+    title_label.pack(padx=15, pady=(0, 10), anchor="w",fill="both")
     normal_font = ck.CTkFont(family="B Nazanin", size=16)#تعریف فونت روی یه متغیر که دیگه نیاز نباشه هی نوع فنت دلخواه رو بنویسیم
     done_font = ck.CTkFont(family="B Nazanin", size=16, overstrike=True)
     
@@ -375,8 +408,147 @@ def page_todo():
     page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
     current_page_widgets.extend([bottom_bar, page])
 
+def load_page_Tomorrow():
+    bottom_bar = ck.CTkFrame(app, fg_color="transparent")
+
+    text_box = ck.CTkEntry( #تکس باکس نوشتن کاری که میخوایی بکنی
+        bottom_bar,
+        placeholder_text="add the new work ",
+        height=40,
+        corner_radius=20
+    )
+    text_box.pack(side="left", fill="x", expand=True) #تکس باکس کجا قرار بگیره
+
+    page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,#صفحه سفید ایجاد کردن مثل یه فرم
+                                scrollbar_button_color="#EDEDEE",
+                                height=500,
+                                width=678)
+
+    title_label1 = ck.CTkLabel(#متن بالای صفحه
+        page,
+        text="کارهای فردا",
+        text_color="black",
+        font=("B Nazanin", 30, "bold")
+    )
+    title_label1.pack(padx=15, pady=(2, 0), anchor="w")
+
+    title_label = ck.CTkLabel(#متن که زیر کارهای من میاد
+        page,
+        text="_________________________________________________________________________________________________________________________",
+        text_color="black",
+        font=("B Nazanin", 20)
+    )
+    title_label.pack(padx=15, pady=(0, 10), anchor="w",fill="both")
+    normal_font = ck.CTkFont(family="B Nazanin", size=16)#تعریف فونت روی یه متغیر که دیگه نیاز نباشه هی نوع فنت دلخواه رو بنویسیم
+    done_font = ck.CTkFont(family="B Nazanin", size=16, overstrike=True)
+    
+    def delete_task(item_frame):#تابع برای زدن دکمه دیلیت بغل کاری که نوشته شده
+        cur.execute("DELETE FROM Tomorrow WHERE id = ?", (item_frame.task_id,))
+        db.commit()
+        item_frame.destroy()
+
+    def create_task_widget(task_id, task_text, is_done):
+        item_frame = ck.CTkFrame(page, fg_color="white", corner_radius=12)
+        item_frame.task_id = task_id   # id دیتابیس رو روی خودِ ویجت نگه می‌داریم
+        item_frame.pack(padx=10, pady=5, fill="x")
+
+        checkbox_var = tk.BooleanVar(value=bool(is_done))
+
+        task_label = ck.CTkLabel(#اگه دکمه زده شده بود فونت رو تغییر بده
+            item_frame,
+            text=task_text,
+            text_color="#9CA3AF" if is_done else "black",
+            font=done_font if is_done else normal_font,
+            anchor="w"
+        )
+
+        def toggle_done():#داخل دیتا بیس تغییر بده بعد زدن چک باکس
+            new_state = checkbox_var.get()
+            cur.execute(
+                "UPDATE Tomorrow SET is_done = ? WHERE id = ?",
+                (1 if new_state else 0, item_frame.task_id)
+            )
+            db.commit()
+
+            if new_state:
+                task_label.configure(font=done_font, text_color="#9CA3AF")
+            else:
+                task_label.configure(font=normal_font, text_color="black")
+
+        checkbox = ck.CTkCheckBox(#تعریف چک باکس
+            item_frame,
+            text="",
+            variable=checkbox_var,
+            command=toggle_done,
+            width=24,
+            checkbox_width=22,
+            checkbox_height=22
+        )
+        checkbox.pack(side="left", padx=(10, 5), pady=10)
+
+        task_label.pack(side="left", padx=5, pady=10, fill="x", expand=True)
+
+        delete_button = ck.CTkButton(#تعریف دکمه حذف
+            item_frame,
+            text="حذف",
+            width=60,
+            height=28,
+            corner_radius=10,
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
+            command=lambda: delete_task(item_frame)
+        )
+        delete_button.pack(side="right", padx=10, pady=10)
+
+    def load_tasks_from_db():
+        """موقع باز شدن صفحه، کارهای قبلاً ذخیره‌شده رو از دیتابیس می‌خونه و نشون می‌ده."""
+        cur.execute("SELECT id, task, is_done FROM Tomorrow ORDER BY id")
+        rows = cur.fetchall()
+        for task_id, task_text, is_done in rows:
+            create_task_widget(task_id, task_text, is_done)
+
+    load_tasks_from_db()   # همین‌جا صدا زده میشه تا کارهای قبلی نمایش داده بشن
+
+    def add_task_item():
+        task_text = text_box.get().strip()
+        if task_text == "":
+            return
+        yesterday = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        cur.execute(
+            """INSERT INTO Tomorrow(task , date , is_done) VALUES(?,?,?)""",(task_text,yesterday,0)
+        )
+        db.commit()
+        new_task_id = cur.lastrowid
+        
+        create_task_widget(new_task_id, task_text, 0)
+
+        text_box.delete(0, "end")
+        
+        
+    add_button = ck.CTkButton(#دکمه بقل تکس باکس اد
+                bottom_bar,
+                text="add",
+                width=80,
+                height=32,
+                corner_radius=15,
+                command=add_task_item
+            )
+    add_button.pack(side="right", padx=(10, 0))
+        
+    text_box.bind("<Return>", lambda event: add_task_item())
+
+    
+    return bottom_bar , page
+
+def page_Tomorrow():
+    hide_current_page()
+    bottom_bar, page = load_page_Tomorrow()
+    bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
+    page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
+    current_page_widgets.extend([bottom_bar, page])
 
 def load_history_page():
+
     history_page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,
                                           scrollbar_button_color="#EDEDEE",
                                           height=500,
@@ -395,7 +567,7 @@ def load_history_page():
         text_color="black",
         font=("B Nazanin", 20)
     )
-    title_label.pack(padx=15, pady=(0, 10), anchor="w")
+    title_label.pack(padx=15, pady=(0, 10), anchor="w", fill="both")
     day_tables = get_all_daily_tables()
 
     if not day_tables:
@@ -448,7 +620,7 @@ def load_history_page():
             status_label.pack(side="right", padx=10, pady=8)
 
     return history_page
-
+ 
 
 def page_history():
     hide_current_page()
@@ -457,85 +629,86 @@ def page_history():
     current_page_widgets.append(history_page)
 
 
-def loade_AI_page():
-    bottom_bar = ck.CTkFrame(app, fg_color="transparent")
 
-    text_box = ck.CTkEntry(
-        bottom_bar,
-        placeholder_text="Ask a question.",
-        height=40,
-        corner_radius=20
-    )
-    text_box.pack(side="left", fill="x", expand=True)
+# def loade_AI_page():
+#     bottom_bar = ck.CTkFrame(app, fg_color="transparent")
 
-    page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,
-                                scrollbar_button_color="#EDEDEE",
-                                height=500,
-                                width=678)
+#     text_box = ck.CTkEntry(
+#         bottom_bar,
+#         placeholder_text="Ask a question.",
+#         height=40,
+#         corner_radius=20
+#     )
+#     text_box.pack(side="left", fill="x", expand=True)
 
-    title_label1 = ck.CTkLabel(
-        page,
-        text="سوالت رو از هوش مصنوعی بپرس",
-        text_color="black",
-        font=("B Nazanin", 30, "bold")
-    )
-    title_label1.pack(padx=15, pady=(15, 10), anchor="w")
+#     page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,
+#                                 scrollbar_button_color="#EDEDEE",
+#                                 height=500,
+#                                 width=678)
 
-    result_box = ck.CTkTextbox(
-        page,
-        fg_color="white",
-        text_color="black",
-        font=("B Nazanin", 15),
-        corner_radius=12,
-        height=380,
-        wrap="word"
-    )
-    result_box.pack(padx=15, pady=10, fill="both", expand=True)
-    result_box.insert("1.0", "سوالت رو بپرس...")
-    result_box.configure(state="disabled")
+#     title_label1 = ck.CTkLabel(
+#         page,
+#         text="سوالت رو از هوش مصنوعی بپرس",
+#         text_color="black",
+#         font=("B Nazanin", 30, "bold")
+#     )
+#     title_label1.pack(padx=15, pady=(15, 10), anchor="w")
 
-    def show_result(text):
-        result_box.configure(state="normal")
-        result_box.delete("1.0", "end")
-        result_box.insert("1.0", text)
-        result_box.configure(state="disabled")
-        add_button.configure(state="normal", text="add")
+#     result_box = ck.CTkTextbox(
+#         page,
+#         fg_color="white",
+#         text_color="black",
+#         font=("B Nazanin", 15),
+#         corner_radius=12,
+#         height=380,
+#         wrap="word"
+#     )
+#     result_box.pack(padx=15, pady=10, fill="both", expand=True)
+#     result_box.insert("1.0", "سوالت رو بپرس...")
+#     result_box.configure(state="disabled")
 
-    def show_error(error_text):
-        show_result(f"خطا پیش اومد:\n{error_text}\n\nمطمئن شو به اینترنت وصلی.")
+#     def show_result(text):
+#         result_box.configure(state="normal")
+#         result_box.delete("1.0", "end")
+#         result_box.insert("1.0", text)
+#         result_box.configure(state="disabled")
+#         add_button.configure(state="normal", text="add")
 
-    def add_task_item():
-        task_text = text_box.get().strip()
-        if task_text == "":
-            return
+#     def show_error(error_text):
+#         show_result(f"خطا پیش اومد:\n{error_text}\n\nمطمئن شو به اینترنت وصلی.")
 
-        add_button.configure(state="disabled", text="در حال فکر کردن...")
-        show_result("در حال ارتباط با هوش مصنوعی...")
+#     def add_task_item():
+#         task_text = text_box.get().strip()
+#         if task_text == "":
+#             return
 
-        ask_OpenAI(task_text, show_result, show_error)
-        text_box.delete(0, "end")
+#         add_button.configure(state="disabled", text="در حال فکر کردن...")
+#         show_result("در حال ارتباط با هوش مصنوعی...")
 
-    add_button = ck.CTkButton(
-        bottom_bar,
-        text="Enter",
-        width=80,
-        height=32,
-        corner_radius=15,
-        command=add_task_item
-    )
-    add_button.pack(side="right", padx=(10, 0))
+#         ask_OpenAI(task_text, show_result, show_error)
+#         text_box.delete(0, "end")
 
-    text_box.bind("<Return>", lambda event: add_task_item())
+#     add_button = ck.CTkButton(
+#         bottom_bar,
+#         text="Enter",
+#         width=80,
+#         height=32,
+#         corner_radius=15,
+#         command=add_task_item
+#     )
+#     add_button.pack(side="right", padx=(10, 0))
 
-    return bottom_bar, page
+#     text_box.bind("<Return>", lambda event: add_task_item())
+
+#     return bottom_bar, page
 
 
-def Open_page_AI():
-    hide_current_page()
-    bottom_bar, page = loade_AI_page()
-    bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
-    page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
-    current_page_widgets.extend([bottom_bar, page])
+# def Open_page_AI():
+#     hide_current_page()
+#     bottom_bar, page = loade_AI_page()
+#     bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
+#     page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
+#     current_page_widgets.extend([bottom_bar, page])
 
 
 settings_popup = None   # نگه‌داری وضعیت باز/بسته بودن پاپ‌آپ
@@ -598,17 +771,123 @@ def open_settings_menu():
     )
     clear_button.pack(padx=10, pady=10)
  
- 
+def page_Motivation():
+    bottom_bar = ck.CTkFrame(app, fg_color="transparent")
 
-for name in ["My Tasks", "Current projects"]:#ساخت دکمه های سمت چپ فرم 
+    text_box = ck.CTkEntry( #تکس باکس نوشتن کاری که میخوایی بکنی
+        bottom_bar,
+        placeholder_text="add the new Motivation ",
+        height=40,
+        corner_radius=20
+    )
+    text_box.pack(side="left", fill="x", expand=True) #تکس باکس کجا قرار بگیره
+
+    page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,#صفحه سفید ایجاد کردن مثل یه فرم
+                                scrollbar_button_color="#EDEDEE",
+                                height=500,
+                                width=678)
+
+    title_label1 = ck.CTkLabel(#متن بالای صفحه
+        page,
+        text="Motivation",
+        text_color="black",
+        font=("B Nazanin", 30, "bold")
+    )
+    title_label1.pack(padx=15, pady=(2, 0), anchor="w")
+
+    title_label = ck.CTkLabel(#متن که زیر کارهای من میاد
+        page,
+        text="_________________________________________________________________________________________________________________________",
+        text_color="black",
+        font=("B Nazanin", 20)
+    )
+    title_label.pack(padx=15, pady=(0, 10), anchor="w",fill="both")
+    normal_font = ck.CTkFont(family="B Nazanin", size=20)#تعریف فونت روی یه متغیر که دیگه نیاز نباشه هی نوع فنت دلخواه رو بنویسیم
+    done_font = ck.CTkFont(family="B Nazanin", size=16, overstrike=True)
+    
+    def delete_task(item_frame):#تابع برای زدن دکمه دیلیت بغل کاری که نوشته شده
+        cur.execute("DELETE FROM Motivation WHERE id = ?", (item_frame.task_id,))
+        db.commit()
+        item_frame.destroy()
+
+    def create_task_widget(task_id , text_motivation):
+        item_frame = ck.CTkFrame(page, fg_color="white", corner_radius=12)
+        item_frame.task_id = task_id   # id دیتابیس رو روی خودِ ویجت نگه می‌داریم
+        item_frame.pack(padx=10, pady=5, fill="x")
+        task_label = ck.CTkLabel(#اگه دکمه زده شده بود فونت رو تغییر بده
+            item_frame,
+            text= text_motivation,
+            font= normal_font,
+            anchor="w"
+        )
+        task_label.pack(side="left", padx=5, pady=10, fill="y", expand=True)
+        delete_button = ck.CTkButton(#تعریف دکمه حذف
+            item_frame,
+            text="حذف",
+            width=60,
+            height=28,
+            corner_radius=10,
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
+            command=lambda: delete_task(item_frame)
+        )
+        delete_button.pack(side="right", padx=10, pady=10)
+
+
+    def load_tasks_from_db():
+        """موقع باز شدن صفحه، کارهای قبلاً ذخیره‌شده رو از دیتابیس می‌خونه و نشون می‌ده."""
+        cur.execute("SELECT id , text_motivation FROM Motivation ORDER BY id")
+        rows = cur.fetchall()
+        for task_id , text_motivation in rows:
+            create_task_widget( task_id , text_motivation )
+
+    load_tasks_from_db()   # همین‌جا صدا زده میشه تا کارهای قبلی نمایش داده بشن
+
+    def add_task_item():
+        text_motivation = text_box.get().strip()
+        if text_motivation == "":
+            return
+        cur.execute(
+            """INSERT INTO Motivation(text_motivation) VALUES(?)""",(text_motivation,)
+        )
+        db.commit()
+        new_task_id = cur.lastrowid
+        
+        create_task_widget(new_task_id , text_motivation)
+
+        text_box.delete(0, "end")
+        
+    add_button = ck.CTkButton(#دکمه بقل تکس باکس اد
+                bottom_bar,
+                text="add",
+                width=80,
+                height=32,
+                corner_radius=15,
+                command=add_task_item
+            )
+    add_button.pack(side="right", padx=(10, 0))
+        
+    text_box.bind("<Return>", lambda event: add_task_item())
+    return bottom_bar , page
+
+def load_page_Motivation():
+    hide_current_page()
+    bottom_bar, page = page_Motivation()
+    bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
+    page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
+    current_page_widgets.extend([bottom_bar, page])
+
+for name in ["My Tasks", "Tasks Tomorrow" ,"Current projects","Motivation"]:#ساخت دکمه های سمت چپ فرم 
     if name == "My Tasks":
         command_func = page_todo
     elif name == "Current projects":
         command_func = page_history
-    elif name == "AI":
-        command_func = Open_page_AI
+    # elif name == "AI":
+    #     command_func = Open_page_AI
+    elif name == "Tasks Tomorrow":
+        command_func = page_Tomorrow
     else:
-        command_func = button_event
+        command_func = load_page_Motivation
 
     btn = ck.CTkButton(
         sidebar,
@@ -658,7 +937,6 @@ def Punishment():
     "همین الان باید 1 ساعت درس بخونی(هر درسی که خودت دوست داری)",
     "همین الان 4 لیوان اب بخور",
 ]
-    text = "اگه اینکاری که گفتم رو انجام ندادی بدون خیلی ادم ضعیفی هستی و توی زندگیت هیچی نمیشی"
     random_Punishment = (rd.choice(punishment_list))
     page = ck.CTkScrollableFrame(
     app,
