@@ -9,9 +9,16 @@ import os
 import sys
 import threading
 import requests
-db = sqlite3.connect("tasks.db")#فراخانی و دیتا بیس 
-cur = db.cursor()
 import random as rd
+
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(BASE_DIR, "tasks.db")
+db = sqlite3.connect(DB_PATH)
+cur = db.cursor()
 
 cur.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
@@ -44,6 +51,15 @@ cur.execute ("""
     CREATE TABLE IF NOT EXISTS motivation(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     text_motivation text
+    )
+""")
+db.commit()
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS weekly (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task TEXT,
+        date TEXT,
+        is_done INTEGER
     )
 """)
 db.commit()
@@ -131,6 +147,27 @@ def migrate_old_tasks_to_daily_tables():#میاد میبینه اگر تسک ج�
 
     db.commit()
 
+def Clear_weekly_tasks():#میاد میبینه اگر تسک جدیدی وارد کردی و اون تسک روزش مرتبط با تسک های قبل نبود میاد کل تسک های روز قبل رو وارد یه جدول جدید میکند
+
+    today = datetime.now().date()
+
+    cur.execute("SELECT MIN(date) FROM weekly")
+    result = cur.fetchone()
+
+    # اگر هیچ تسک هفتگی وجود ندارد
+    if not result or result[0] is None:
+        return
+
+    first_date = datetime.strptime(result[0], "%Y-%m-%d").date()
+
+    # اگر 7 روز یا بیشتر گذشته باشد
+    if (today - first_date).days >= 7:
+        cur.execute("DELETE FROM weekly")
+        db.commit()
+        #تسک ها رو دیلیت میکنه از جدول فعلی که دارد
+
+    db.commit()
+
 
 def get_all_daily_tables():
     cur.execute("""
@@ -153,7 +190,8 @@ def cleanup_old_day_tables():
 check_yesterday_tasks_before_migration()   # اول (قبل از migrate) چک کن دیروز کاری نصفه مونده یا نه
 move_tomorrow_tasks_to_today()  
 migrate_old_tasks_to_daily_tables()   # اول کارهای قدیمی رو به جدول روزانه‌شون منتقل کن
-cleanup_old_day_tables()     
+cleanup_old_day_tables()   
+Clear_weekly_tasks()  
 db.commit()
 
 
@@ -242,10 +280,7 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-
 ck.set_appearance_mode("light")
-def button_event():
-    print("button pressed")
 
 app = ck.CTk()
 #ایکون ستینگ سمت چپ پایین
@@ -256,7 +291,7 @@ my_image = ck.CTkImage(
 )
 #ایکون برنامه
 app.wm_iconbitmap(resource_path('Image/to_do.ico'))
-app.title('TO_DO_List')
+app.title('Doora')
 app.geometry("930x620")
 current_page_widgets = []
 
@@ -876,16 +911,160 @@ def load_page_Motivation():
     bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
     page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
     current_page_widgets.extend([bottom_bar, page])
+def page_weekly():#صفحه ای که با کلیک روی دکمه تو دو زدن باز بشه
+    bottom_bar = ck.CTkFrame(app, fg_color="transparent")
 
-for name in ["My Tasks", "Tasks Tomorrow" ,"Current projects","Motivation"]:#ساخت دکمه های سمت چپ فرم 
+    text_box = ck.CTkEntry( #تکس باکس نوشتن کاری که میخوایی بکنی
+        bottom_bar,
+        placeholder_text="add the new work ",
+        height=40,
+        corner_radius=20
+    )
+    text_box.pack(side="left", fill="x", expand=True) #تکس باکس کجا قرار بگیره
+
+    page = ck.CTkScrollableFrame(app, fg_color="#F5F5F7", corner_radius=20,#صفحه سفید ایجاد کردن مثل یه فرم
+                                scrollbar_button_color="#EDEDEE",
+                                height=500,
+                                width=678)
+
+    title_label1 = ck.CTkLabel(#متن بالای صفحه
+        page,
+        text="کارهای هفتگی",
+        text_color="black",
+        font=("B Nazanin", 30, "bold")
+    )
+    title_label1.pack(padx=15, pady=(2, 0), anchor="w")
+
+    title_label = ck.CTkLabel(#متن که زیر کارهای من میاد
+        page,
+        text="_________________________________________________________________________________________________________________________",
+        text_color="black",
+        font=("B Nazanin", 20)
+    )
+    title_label.pack(padx=15, pady=(0, 10), anchor="w",fill="both")
+    normal_font = ck.CTkFont(family="B Nazanin", size=16)#تعریف فونت روی یه متغیر که دیگه نیاز نباشه هی نوع فنت دلخواه رو بنویسیم
+    done_font = ck.CTkFont(family="B Nazanin", size=16, overstrike=True)
+    
+    def delete_task(item_frame):#تابع برای زدن دکمه دیلیت بغل کاری که نوشته شده
+        cur.execute("DELETE FROM weekly WHERE id = ?", (item_frame.task_id,))
+        db.commit()
+        item_frame.destroy()
+
+    def create_task_widget(task_id, task_text, is_done):
+        item_frame = ck.CTkFrame(page, fg_color="white", corner_radius=12)
+        item_frame.task_id = task_id   # id دیتابیس رو روی خودِ ویجت نگه می‌داریم
+        item_frame.pack(padx=10, pady=5, fill="x")
+
+        checkbox_var = tk.BooleanVar(value=bool(is_done))
+
+        task_label = ck.CTkLabel(#اگه دکمه زده شده بود فونت رو تغییر بده
+            item_frame,
+            text=task_text,
+            text_color="#9CA3AF" if is_done else "black",
+            font=done_font if is_done else normal_font,
+            anchor="w"
+        )
+
+        def toggle_done():#داخل دیتا بیس تغییر بده بعد زدن چک باکس
+            new_state = checkbox_var.get()
+            cur.execute(
+                "UPDATE weekly SET is_done = ? WHERE id = ?",
+                (1 if new_state else 0, item_frame.task_id)
+            )
+            db.commit()
+
+            if new_state:
+                task_label.configure(font=done_font, text_color="#9CA3AF")
+            else:
+                task_label.configure(font=normal_font, text_color="black")
+
+        checkbox = ck.CTkCheckBox(#تعریف چک باکس
+            item_frame,
+            text="",
+            variable=checkbox_var,
+            command=toggle_done,
+            width=24,
+            checkbox_width=22,
+            checkbox_height=22
+        )
+        checkbox.pack(side="left", padx=(10, 5), pady=10)
+
+        task_label.pack(side="left", padx=5, pady=10, fill="x", expand=True)
+
+        delete_button = ck.CTkButton(#تعریف دکمه حذف
+            item_frame,
+            text="حذف",
+            width=60,
+            height=28,
+            corner_radius=10,
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
+            command=lambda: delete_task(item_frame)
+        )
+        delete_button.pack(side="right", padx=10, pady=10)
+
+    def load_tasks_from_db():
+        """موقع باز شدن صفحه، کارهای قبلاً ذخیره‌شده رو از دیتابیس می‌خونه و نشون می‌ده."""
+        cur.execute("SELECT id, task, is_done FROM weekly ORDER BY id")
+        rows = cur.fetchall()
+        for task_id, task_text, is_done in rows:
+            create_task_widget(task_id, task_text, is_done)
+
+    load_tasks_from_db()   # همین‌جا صدا زده میشه تا کارهای قبلی نمایش داده بشن
+
+    def add_task_item():
+        task_text = text_box.get().strip()
+        if task_text == "":
+            return
+        today = datetime.now().strftime("%Y-%m-%d")
+        cur.execute(
+            """INSERT INTO weekly(task , date , is_done) VALUES(?,?,?)""",(task_text,today,0)
+        )
+        db.commit()
+        new_task_id = cur.lastrowid
+        
+        create_task_widget(new_task_id, task_text, 0)
+
+        text_box.delete(0, "end")
+        
+        
+    add_button = ck.CTkButton(#دکمه بقل تکس باکس اد
+                bottom_bar,
+                text="add",
+                width=80,
+                height=32,
+                corner_radius=15,
+                command=add_task_item
+            )
+    add_button.pack(side="right", padx=(10, 0))
+        
+    text_box.bind("<Return>", lambda event: add_task_item())
+    
+    return bottom_bar , page
+
+def loade_page_weekly():
+    hide_current_page()
+    bottom_bar, page = page_weekly()
+    bottom_bar.pack(side="bottom", fill="both", padx=20, pady=10)
+    page.pack(side="top", anchor="nw", fill="both", expand=True, padx=10, pady=10)
+    current_page_widgets.extend([bottom_bar, page])
+
+for name in ["My Tasks", "Tasks Tomorrow", "Tasks Weekly" ,"Current projects","Motivation"]:#ساخت دکمه های سمت چپ فرم 
     if name == "My Tasks":
         command_func = page_todo
+
     elif name == "Current projects":
         command_func = page_history
+
     # elif name == "AI":
     #     command_func = Open_page_AI
+
     elif name == "Tasks Tomorrow":
         command_func = page_Tomorrow
+
+    elif name == "Tasks Weekly":
+            command_func = loade_page_weekly
+
     else:
         command_func = load_page_Motivation
 
